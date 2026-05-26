@@ -2,19 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * Gemini Live API – bidirektionales Audio.
- * Nutzt direkte Browser-WebSocket-Verbindung zur Gemini Live API.
- * API Key kommt via props (aus localStorage oder env-exposed route).
- */
 export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
-  const [status, setStatus] = useState('idle'); // idle | connecting | active | speaking | error
+  const [status, setStatus] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
   const wsRef = useRef(null);
   const audioCtxRef = useRef(null);
   const streamRef = useRef(null);
   const processorRef = useRef(null);
 
-  const GEMINI_MODEL = model || process.env.NEXT_PUBLIC_GEMINI_MODEL || 'gemini-3.5-flash';
+  const GEMINI_MODEL = model || 'gemini-3.5-flash';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
   const stop = () => {
@@ -22,28 +18,43 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     wsRef.current?.close();
     audioCtxRef.current?.close();
+    processorRef.current = null;
+    streamRef.current = null;
+    wsRef.current = null;
+    audioCtxRef.current = null;
     setStatus('idle');
   };
 
   const start = async () => {
     if (!apiKey) {
+      setErrorMsg('Kein API Key eingegeben.');
       setStatus('error');
       return;
     }
+    setErrorMsg('');
 
     try {
       setStatus('connecting');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Mikrofon-Zugriff anfragen
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        throw new Error(`Mikrofon-Zugriff verweigert: ${err.message}`);
+      }
       streamRef.current = stream;
 
+      // AudioContext mit explizitem resume() (Browser-Autoplay-Policy)
       const audioCtx = new AudioContext({ sampleRate: 16000 });
+      await audioCtx.resume();
       audioCtxRef.current = audioCtx;
 
+      // WebSocket zu Gemini Live API
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Initial setup message
         ws.send(JSON.stringify({
           setup: {
             model: `models/${GEMINI_MODEL}`,
@@ -62,19 +73,18 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
 
       ws.onmessage = async (event) => {
         let data;
-        if (event.data instanceof Blob) {
-          data = JSON.parse(await event.data.text());
-        } else {
-          data = JSON.parse(event.data);
+        try {
+          const text = event.data instanceof Blob ? await event.data.text() : event.data;
+          data = JSON.parse(text);
+        } catch {
+          return;
         }
 
-        // Setup confirmed
         if (data.setupComplete) {
           setStatus('active');
           startMicStream(audioCtx, ws);
         }
 
-        // Audio response from Gemini (persona speaking)
         if (data.serverContent?.modelTurn?.parts) {
           for (const part of data.serverContent.modelTurn.parts) {
             if (part.inlineData?.mimeType?.startsWith('audio/')) {
@@ -90,13 +100,32 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
         if (data.serverContent?.turnComplete) {
           setStatus('active');
         }
+
+        // API-Fehler sichtbar machen
+        if (data.error) {
+          setErrorMsg(`API-Fehler: ${data.error.message || JSON.stringify(data.error)}`);
+          setStatus('error');
+          stop();
+        }
       };
 
-      ws.onerror = () => setStatus('error');
-      ws.onclose = () => setStatus('idle');
+      ws.onerror = (e) => {
+        setErrorMsg('WebSocket-Verbindung fehlgeschlagen. API Key prüfen.');
+        setStatus('error');
+      };
+
+      ws.onclose = (e) => {
+        if (status !== 'idle') {
+          if (e.code !== 1000) setErrorMsg(`Verbindung getrennt (Code ${e.code})`);
+          setStatus('idle');
+        }
+      };
+
     } catch (err) {
-      console.error('GeminiVoice error:', err);
+      console.error('GeminiVoice:', err);
+      setErrorMsg(err.message || 'Unbekannter Fehler');
       setStatus('error');
+      stop();
     }
   };
 
@@ -110,53 +139,56 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
       const float32 = e.inputBuffer.getChannelData(0);
       const pcm16 = float32ToPcm16(float32);
       const base64 = arrayBufferToBase64(pcm16.buffer);
-
       ws.send(JSON.stringify({
         realtimeInput: {
-          mediaChunks: [{
-            mimeType: 'audio/pcm;rate=16000',
-            data: base64,
-          }],
+          mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }],
         },
       }));
     };
 
+    // GainNode auf 0 verhindert Mikrofon-Feedback über Lautsprecher,
+    // aber ScriptProcessor feuert trotzdem (braucht eine Verbindung zu destination)
+    const silentGain = audioCtx.createGain();
+    silentGain.gain.value = 0;
     source.connect(processor);
-    processor.connect(audioCtx.destination);
+    processor.connect(silentGain);
+    silentGain.connect(audioCtx.destination);
   };
 
   const playAudioChunk = (audioCtx, base64Data) => {
-    const binary = atob(base64Data);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-    const pcm16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(pcm16.length);
-    for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
-
-    const buffer = audioCtx.createBuffer(1, float32.length, 24000);
-    buffer.copyToChannel(float32, 0);
-    const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioCtx.destination);
-    source.start();
+    try {
+      const binary = atob(base64Data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const pcm16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
+      const buffer = audioCtx.createBuffer(1, float32.length, 24000);
+      buffer.copyToChannel(float32, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(audioCtx.destination);
+      src.start();
+    } catch (err) {
+      console.error('Audio playback error:', err);
+    }
   };
 
   useEffect(() => () => stop(), []);
 
   const STATUS_LABELS = {
-    idle: 'Voice-Modus starten',
+    idle: 'Live Voice-Dialog starten',
     connecting: 'Verbinde...',
-    active: 'Aktiv — sprechen',
+    active: 'Aktiv — jetzt sprechen',
     speaking: 'Persona spricht...',
     error: 'Fehler — neu versuchen',
   };
 
   const STATUS_COLORS = {
-    idle: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+    idle: 'bg-purple-600 hover:bg-purple-700 text-white',
     connecting: 'bg-gray-300 text-gray-600 cursor-wait',
-    active: 'bg-green-500 hover:bg-red-500 text-white ring-4 ring-green-200',
-    speaking: 'bg-indigo-400 text-white cursor-default',
+    active: 'bg-green-500 text-white ring-4 ring-green-200 animate-pulse',
+    speaking: 'bg-indigo-500 text-white',
     error: 'bg-red-500 hover:bg-red-600 text-white',
   };
 
@@ -166,19 +198,24 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
   };
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={status === 'connecting'}
-      className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all select-none ${STATUS_COLORS[status]}`}
-    >
-      <span>
-        {status === 'active' ? '🟢' :
-         status === 'speaking' ? '🔊' :
-         status === 'connecting' ? '⏳' :
-         status === 'error' ? '⚠️' : '🎙️'}
-      </span>
-      <span>{STATUS_LABELS[status]}</span>
-    </button>
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={handleClick}
+        disabled={status === 'connecting'}
+        className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all select-none ${STATUS_COLORS[status]}`}
+      >
+        <span>
+          {status === 'active' ? '🟢' :
+           status === 'speaking' ? '🔊' :
+           status === 'connecting' ? '⏳' :
+           status === 'error' ? '⚠️' : '🎙️'}
+        </span>
+        <span>{STATUS_LABELS[status]}</span>
+      </button>
+      {errorMsg && (
+        <p className="text-xs text-red-600 px-1">{errorMsg}</p>
+      )}
+    </div>
   );
 }
 
