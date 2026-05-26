@@ -253,6 +253,7 @@ export default function Home() {
             <GeminiVoice
               systemPrompt={systemPromptForVoice}
               apiKey={geminiKey}
+              model="gemini-3.5-flash"
               onText={(text) =>
                 setMessages((prev) => [...prev, { role: 'assistant', content: text }])
               }

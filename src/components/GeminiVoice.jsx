@@ -14,7 +14,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
   const streamRef = useRef(null);
   const processorRef = useRef(null);
 
-  const GEMINI_MODEL = model || 'gemini-2.5-flash';
+  const GEMINI_MODEL = model || process.env.NEXT_PUBLIC_GEMINI_MODEL || 'gemini-3.5-flash';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
   const stop = () => {
