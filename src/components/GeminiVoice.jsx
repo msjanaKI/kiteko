@@ -13,7 +13,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
 
   // Live API requires a native audio model — text models (gemini-3.5-flash etc.) do not support BidiGenerateContent
   const LIVE_MODEL = 'gemini-2.0-flash-live-001';
-  const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+  const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
   const stop = () => {
     processorRef.current?.disconnect();
