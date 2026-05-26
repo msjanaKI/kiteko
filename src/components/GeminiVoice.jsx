@@ -39,6 +39,19 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
     try {
       setStatus('connecting');
 
+      // Dynamisch das erste Live-API-fähige Modell ermitteln
+      let liveModel = LIVE_MODEL;
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const json = await res.json();
+        const found = json.models?.find((m) =>
+          m.supportedGenerationMethods?.includes('bidiGenerateContent')
+        );
+        if (found) liveModel = found.name; // z.B. "models/gemini-2.0-flash-live-001"
+      } catch {
+        // Fallback auf hardcoded Modell
+      }
+
       // Mikrofon-Zugriff anfragen
       let stream;
       try {
@@ -61,7 +74,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
         statusRef.current = 'connecting';
         ws.send(JSON.stringify({
           setup: {
-            model: `models/${LIVE_MODEL}`,
+            model: liveModel,
             generation_config: {
               response_modalities: ['AUDIO'],
               speech_config: {
