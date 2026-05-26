@@ -48,6 +48,28 @@ const PersonasSVG = () => (
   </>
 );
 
+const BoardSVG = ({ active }) => {
+  const c = active ? '#6366f1' : '#94a3b8';
+  const bg = active ? '#e0e7ff' : '#f1f5f9';
+  const r = 30;
+  const pts = [0,60,120,180,240,300].map(deg => {
+    const rad = deg * Math.PI / 180;
+    return { x: +(50 + r * Math.cos(rad)).toFixed(1), y: +(50 + r * Math.sin(rad)).toFixed(1) };
+  });
+  return (
+    <svg className="absolute top-1/2 -translate-y-1/2 right-3 w-28 h-28" viewBox="0 0 100 100" fill="none">
+      <ellipse cx="50" cy="50" rx="16" ry="10" fill={bg} stroke={c} strokeWidth="0.75" opacity="0.8"/>
+      {pts.map(({x, y}, i) => (
+        <g key={i}>
+          <circle cx={x} cy={y} r="7.5" fill={bg} stroke={c} strokeWidth="0.75"/>
+          <circle cx={x} cy={y - 2.2} r="2.3" fill={c}/>
+          <path d={`M${x-3},${y+3} Q${x},${y+5.5} ${x+3},${y+3}`} stroke={c} strokeWidth="0.75"/>
+        </g>
+      ))}
+    </svg>
+  );
+};
+
 const ArrowIcon = () => (
   <svg className="w-4 h-4 transition group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <path d="M5 12h14M13 6l6 6-6 6"/>
@@ -77,6 +99,7 @@ export default function ModuleCard({ id, number, title, description, active, onC
         {id === 'routing' && <CompassSVG active={active} />}
         {id === 'auftragsklarung' && <TargetSVG active={active} />}
         {id === 'persona' && <PersonasSVG />}
+        {id === 'board' && <BoardSVG active={active} />}
         {active && (
           <div className="absolute top-3 right-3 text-xs font-semibold text-indigo-600 inline-flex items-center gap-1 bg-white/70 backdrop-blur px-2 py-1 rounded-md">
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-600"/>Aktiv
