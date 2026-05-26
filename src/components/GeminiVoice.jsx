@@ -9,8 +9,10 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
   const audioCtxRef = useRef(null);
   const streamRef = useRef(null);
   const processorRef = useRef(null);
+  const statusRef = useRef('idle');
 
-  const GEMINI_MODEL = model || 'gemini-3.5-flash';
+  // Live API requires a native audio model — text models (gemini-3.5-flash etc.) do not support BidiGenerateContent
+  const LIVE_MODEL = 'gemini-2.0-flash-live-001';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
   const stop = () => {
@@ -22,6 +24,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
     streamRef.current = null;
     wsRef.current = null;
     audioCtxRef.current = null;
+    statusRef.current = 'idle';
     setStatus('idle');
   };
 
@@ -55,9 +58,10 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        statusRef.current = 'connecting';
         ws.send(JSON.stringify({
           setup: {
-            model: `models/${GEMINI_MODEL}`,
+            model: `models/${LIVE_MODEL}`,
             generation_config: {
               response_modalities: ['AUDIO'],
               speech_config: {
@@ -81,6 +85,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
         }
 
         if (data.setupComplete) {
+          statusRef.current = 'active';
           setStatus('active');
           startMicStream(audioCtx, ws);
         }
@@ -98,6 +103,7 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
         }
 
         if (data.serverContent?.turnComplete) {
+          statusRef.current = 'active';
           setStatus('active');
         }
 
@@ -115,8 +121,11 @@ export default function GeminiVoice({ systemPrompt, onText, apiKey, model }) {
       };
 
       ws.onclose = (e) => {
-        if (status !== 'idle') {
-          if (e.code !== 1000) setErrorMsg(`Verbindung getrennt (Code ${e.code})`);
+        if (statusRef.current !== 'idle') {
+          if (e.code !== 1000) {
+            setErrorMsg(`Verbindung getrennt (Code ${e.code}${e.reason ? ': ' + e.reason : ''})`);
+          }
+          statusRef.current = 'idle';
           setStatus('idle');
         }
       };
