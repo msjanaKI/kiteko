@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
-export default function ChatView({ messages, loading }) {
+export default function ChatView({ messages, loading, persona }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -11,31 +11,52 @@ export default function ChatView({ messages, loading }) {
 
   if (messages.length === 0 && !loading) return null;
 
+  const personaInitials = persona?.name
+    ? persona.name.split('/')[0].trim().slice(0, 3).toUpperCase()
+    : 'KI';
+
   return (
-    <div className="flex flex-col gap-4 py-4">
+    <div className="space-y-5">
       {messages.map((msg, i) => (
-        <div
-          key={i}
-          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-        >
-          <div
-            className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-              msg.role === 'user'
-                ? 'bg-indigo-600 text-white rounded-br-sm'
-                : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm shadow-sm'
-            }`}
-          >
-            {msg.content}
+        msg.role === 'user' ? (
+          <div key={i} className="flex gap-3 max-w-[80%] ml-auto flex-row-reverse">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-slate-200 grid place-items-center text-slate-700 text-xs font-semibold">
+              DU
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 mb-1 text-right">Du</div>
+              <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap">
+                {msg.content}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div key={i} className="flex gap-3 max-w-[80%]">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-indigo-600 grid place-items-center text-white text-xs font-semibold">
+              {personaInitials}
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 mb-1 font-medium text-slate-700">
+                {persona ? persona.name.split('/')[0].trim() : 'KITEKO'}
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 text-[15px] leading-relaxed text-slate-800 shadow-sm whitespace-pre-wrap">
+                {msg.content}
+              </div>
+            </div>
+          </div>
+        )
       ))}
+
       {loading && (
-        <div className="flex justify-start">
-          <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-            <div className="flex gap-1">
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="flex gap-3 max-w-[80%]">
+          <div className="h-8 w-8 shrink-0 rounded-full bg-indigo-600 grid place-items-center text-white text-xs font-semibold">
+            {personaInitials}
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:'0ms'}}/>
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:'120ms'}}/>
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:'240ms'}}/>
             </div>
           </div>
         </div>
