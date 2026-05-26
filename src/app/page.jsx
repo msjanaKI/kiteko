@@ -9,23 +9,19 @@ import VoiceButton from '@/components/VoiceButton';
 const MODULES = [
   { id: 'routing', number: '01', title: 'Freie Eingabe', description: 'Stelle eigene Fragen, ohne Vorgaben.' },
   { id: 'auftragsklarung', number: '02', title: 'Auftragsklärung', description: 'Schärfe Scope, Ziele und Erfolgskriterien.' },
-  { id: 'persona', number: '03', title: 'Persona-Simulation', description: 'Übe Gespräche mit einem Stakeholder.' },
+  { id: 'persona', number: '03', title: 'Persona-Simulation', description: 'Übe Gespräche mit einem Stakeholder-Archetyp.' },
   { id: 'board', number: '04', title: 'Board Meeting', description: 'Diskutiere mit 2–6 Stakeholdern gleichzeitig.' },
+  { id: 'realstakeholder', number: '05', title: 'Realer Stakeholder', description: 'Simuliere eine echte Person — mit deinen Infos.' },
+  { id: 'sparring', number: '06', title: 'Sparringspartner', description: 'Eine KI-Gegenstimme die deine blinden Flecken sieht.' },
 ];
 
 const VOICE_PROFILE = {
-  '01': { pitch: 0.80, rate: 0.88 },
-  '02': { pitch: 0.85, rate: 0.83 },
-  '03': { pitch: 1.15, rate: 1.02 },
-  '04': { pitch: 0.90, rate: 0.78 },
-  '05': { pitch: 1.20, rate: 1.12 },
-  '06': { pitch: 0.95, rate: 0.93 },
-  '07': { pitch: 1.25, rate: 1.18 },
-  '08': { pitch: 0.88, rate: 0.85 },
-  '09': { pitch: 0.82, rate: 0.90 },
-  '10': { pitch: 0.78, rate: 0.85 },
-  '11': { pitch: 1.00, rate: 0.88 },
-  '12': { pitch: 1.12, rate: 1.05 },
+  '01': { pitch: 0.80, rate: 0.88 }, '02': { pitch: 0.85, rate: 0.83 },
+  '03': { pitch: 1.15, rate: 1.02 }, '04': { pitch: 0.90, rate: 0.78 },
+  '05': { pitch: 1.20, rate: 1.12 }, '06': { pitch: 0.95, rate: 0.93 },
+  '07': { pitch: 1.25, rate: 1.18 }, '08': { pitch: 0.88, rate: 0.85 },
+  '09': { pitch: 0.82, rate: 0.90 }, '10': { pitch: 0.78, rate: 0.85 },
+  '11': { pitch: 1.00, rate: 0.88 }, '12': { pitch: 1.12, rate: 1.05 },
 };
 
 export const INITIALS = {
@@ -35,32 +31,51 @@ export const INITIALS = {
 };
 
 const PERSONAS = [
-  { id: '01', name: 'CEO / Geschäftsführer' },
-  { id: '02', name: 'CFO / Finanzvorstand' },
-  { id: '03', name: 'HR-Leitung' },
-  { id: '04', name: 'Legal / Datenschutz' },
-  { id: '05', name: 'Produktmanagement' },
-  { id: '06', name: 'IT-Leitung' },
-  { id: '07', name: 'Vertrieb / Sales' },
-  { id: '08', name: 'Controlling' },
-  { id: '09', name: 'Investor' },
-  { id: '10', name: 'Advisory Board' },
-  { id: '11', name: 'Betriebsrat' },
-  { id: '12', name: 'Service / Sachbearbeitung' },
+  { id: '01', name: 'CEO / Geschäftsführer' }, { id: '02', name: 'CFO / Finanzvorstand' },
+  { id: '03', name: 'HR-Leitung' },            { id: '04', name: 'Legal / Datenschutz' },
+  { id: '05', name: 'Produktmanagement' },      { id: '06', name: 'IT-Leitung' },
+  { id: '07', name: 'Vertrieb / Sales' },       { id: '08', name: 'Controlling' },
+  { id: '09', name: 'Investor' },               { id: '10', name: 'Advisory Board' },
+  { id: '11', name: 'Betriebsrat' },            { id: '12', name: 'Service / Sachbearbeitung' },
 ];
+
+const LS_SPARRING = 'KITEKO_SPARRING_PROFILE';
+const LS_KEY = 'KITEKO_GEMINI_KEY';
 
 export default function Home() {
   const [mode, setMode] = useState('routing');
+
+  // Single persona
   const [selectedPersona, setSelectedPersona] = useState(null);
+
+  // Board
   const [boardPersonas, setBoardPersonas] = useState([]);
   const [boardStarted, setBoardStarted] = useState(false);
+
+  // Real Stakeholder
+  const [rsReady, setRsReady] = useState(false);   // guided phase complete
+  const [rsProfile, setRsProfile] = useState('');   // collected description
+  const [rsName, setRsName] = useState('');         // name/role
+
+  // Sparring
+  const [sparringReady, setSparringReady] = useState(false);
+  const [sparringProfile, setSparringProfile] = useState('');
+
+  // Chat
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Reflection (Feature 1)
+  const [reflection, setReflection] = useState('');
+  const [loadingReflection, setLoadingReflection] = useState(false);
+
+  // API key + voice
   const [geminiKey, setGeminiKey] = useState('');
   const [voiceMode, setVoiceMode] = useState(false);
   const [listenState, setListenState] = useState('idle');
 
+  // Refs for stale-closure safety
   const voiceModeRef = useRef(false);
   const loadingRef = useRef(false);
   const messagesRef = useRef([]);
@@ -68,6 +83,11 @@ export default function Home() {
   const selectedPersonaRef = useRef(null);
   const boardPersonasRef = useRef([]);
   const boardStartedRef = useRef(false);
+  const rsReadyRef = useRef(false);
+  const rsProfileRef = useRef('');
+  const rsNameRef = useRef('');
+  const sparringReadyRef = useRef(false);
+  const sparringProfileRef = useRef('');
   const recognitionRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -76,23 +96,27 @@ export default function Home() {
   useEffect(() => { selectedPersonaRef.current = selectedPersona; }, [selectedPersona]);
   useEffect(() => { boardPersonasRef.current = boardPersonas; }, [boardPersonas]);
   useEffect(() => { boardStartedRef.current = boardStarted; }, [boardStarted]);
+  useEffect(() => { rsReadyRef.current = rsReady; }, [rsReady]);
+  useEffect(() => { rsProfileRef.current = rsProfile; }, [rsProfile]);
+  useEffect(() => { rsNameRef.current = rsName; }, [rsName]);
+  useEffect(() => { sparringReadyRef.current = sparringReady; }, [sparringReady]);
+  useEffect(() => { sparringProfileRef.current = sparringProfile; }, [sparringProfile]);
 
   useEffect(() => {
-    const stored = localStorage.getItem('KITEKO_GEMINI_KEY');
-    if (stored) setGeminiKey(stored);
+    const key = localStorage.getItem(LS_KEY);
+    if (key) setGeminiKey(key);
+    const sp = localStorage.getItem(LS_SPARRING);
+    if (sp) setSparringProfile(sp);
   }, []);
 
-  const saveKey = (key) => {
-    setGeminiKey(key);
-    localStorage.setItem('KITEKO_GEMINI_KEY', key);
-  };
+  const saveKey = (key) => { setGeminiKey(key); localStorage.setItem(LS_KEY, key); };
 
-  // --- Voice ---
+  // ─── Voice ──────────────────────────────────────────────────────────────────
 
   const stopListening = () => {
     recognitionRef.current?.abort();
     recognitionRef.current = null;
-    setListenState((s) => s === 'listening' ? 'idle' : s);
+    setListenState(s => s === 'listening' ? 'idle' : s);
   };
 
   const startListening = () => {
@@ -100,39 +124,29 @@ export default function Home() {
     const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
     if (!SR) return;
     const r = new SR();
-    r.lang = 'de-DE';
-    r.continuous = false;
-    r.interimResults = false;
+    r.lang = 'de-DE'; r.continuous = false; r.interimResults = false;
     r.onstart = () => setListenState('listening');
-    r.onresult = (e) => {
-      const t = e.results[0][0].transcript.trim();
-      if (t) sendMessageInternal(t);
-    };
+    r.onresult = (e) => { const t = e.results[0][0].transcript.trim(); if (t) sendMessageInternal(t); };
     r.onerror = () => setListenState('idle');
     r.onend = () => {
       recognitionRef.current = null;
-      if (voiceModeRef.current && !loadingRef.current) {
+      if (voiceModeRef.current && !loadingRef.current)
         setTimeout(() => { if (voiceModeRef.current && !loadingRef.current) startListening(); }, 300);
-      }
     };
     recognitionRef.current = r;
     try { r.start(); } catch { recognitionRef.current = null; }
   };
 
   const speakText = (text, personaId, onDone) => {
-    if (!voiceModeRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
-      onDone?.(); return;
-    }
+    if (!voiceModeRef.current || typeof window === 'undefined' || !window.speechSynthesis) { onDone?.(); return; }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'de-DE';
     const p = VOICE_PROFILE[personaId] || { pitch: 1.0, rate: 1.0 };
-    u.pitch = p.pitch;
-    u.rate = p.rate;
+    u.pitch = p.pitch; u.rate = p.rate;
     const voices = window.speechSynthesis.getVoices();
-    const deVoice = voices.find((v) => v.lang.startsWith('de') && v.localService) ||
-                    voices.find((v) => v.lang.startsWith('de'));
-    if (deVoice) u.voice = deVoice;
+    const dv = voices.find(v => v.lang.startsWith('de') && v.localService) || voices.find(v => v.lang.startsWith('de'));
+    if (dv) u.voice = dv;
     u.onend = () => { setListenState('idle'); onDone?.(); };
     u.onerror = () => { setListenState('idle'); onDone?.(); };
     setListenState('speaking');
@@ -140,128 +154,9 @@ export default function Home() {
   };
 
   const speakSequence = (msgs, index) => {
-    if (index >= msgs.length) {
-      if (voiceModeRef.current) startListening();
-      return;
-    }
+    if (index >= msgs.length) { if (voiceModeRef.current) startListening(); return; }
     const msg = msgs[index];
-    speakText(msg.content, msg.personaId, () => {
-      setTimeout(() => speakSequence(msgs, index + 1), 400);
-    });
-  };
-
-  // --- Board Meeting ---
-
-  const buildPersonaHistory = (allMsgs, personaId) =>
-    allMsgs
-      .filter(m => m.role === 'user' || m.personaId === personaId)
-      .map(m => ({ role: m.role, content: m.content }));
-
-  const toggleBoardPersona = (persona) => {
-    setBoardPersonas(prev => {
-      const exists = prev.find(p => p.id === persona.id);
-      if (exists) return prev.filter(p => p.id !== persona.id);
-      if (prev.length >= 6) return prev;
-      return [...prev, persona];
-    });
-  };
-
-  const startBoardMeeting = () => {
-    if (boardPersonas.length < 2) return;
-    setBoardStarted(true);
-    boardStartedRef.current = true;
-  };
-
-  const sendBoardMessage = async (text) => {
-    if (!text.trim() || loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    stopListening();
-
-    const userMsg = { role: 'user', content: text };
-    const current = [...messagesRef.current, userMsg];
-    messagesRef.current = current;
-    setMessages(current);
-    setInput('');
-
-    try {
-      const personas = boardPersonasRef.current;
-      const responses = await Promise.all(
-        personas.map(async (persona) => {
-          const history = buildPersonaHistory(current, persona.id);
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: history, mode: 'persona', personaId: persona.id }),
-          });
-          const data = await res.json();
-          return {
-            role: 'assistant',
-            content: data.text || data.error || 'Keine Antwort',
-            personaId: persona.id,
-            personaName: persona.name,
-          };
-        })
-      );
-
-      const updated = [...current, ...responses];
-      messagesRef.current = updated;
-      setMessages(updated);
-      if (voiceModeRef.current) speakSequence(responses, 0);
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Fehler: ${err.message}` }]);
-      if (voiceModeRef.current) startListening();
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      inputRef.current?.focus();
-    }
-  };
-
-  // --- Single message ---
-
-  const sendMessageInternal = async (text) => {
-    if (modeRef.current === 'board' && boardStartedRef.current) return sendBoardMessage(text);
-
-    if (!text.trim() || loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    stopListening();
-
-    const userMessage = { role: 'user', content: text };
-    const newMessages = [...messagesRef.current, userMessage];
-    messagesRef.current = newMessages;
-    setMessages(newMessages);
-    setInput('');
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages,
-          mode: selectedPersonaRef.current ? 'persona' : modeRef.current,
-          personaId: selectedPersonaRef.current?.id || null,
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      const pid = selectedPersonaRef.current?.id || null;
-      setMessages(prev => [...prev, { role: 'assistant', content: data.text, personaId: pid }]);
-      if (data.route === 'persona_simulation' && data.personaId && !selectedPersonaRef.current) {
-        const persona = PERSONAS.find(p => p.id === data.personaId);
-        if (persona) { selectedPersonaRef.current = persona; setSelectedPersona(persona); }
-      }
-      if (data.route === 'auftragsklarung' && modeRef.current === 'routing') setMode('auftragsklarung');
-      speakText(data.text, pid, () => { if (voiceModeRef.current) startListening(); });
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Fehler: ${err.message}` }]);
-      if (voiceModeRef.current) startListening();
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      inputRef.current?.focus();
-    }
+    speakText(msg.content, msg.personaId, () => setTimeout(() => speakSequence(msgs, index + 1), 400));
   };
 
   const toggleVoiceMode = () => {
@@ -272,23 +167,170 @@ export default function Home() {
     else { stopListening(); window.speechSynthesis?.cancel(); setListenState('idle'); }
   };
 
+  // ─── Reflection (Feature 1) ──────────────────────────────────────────────────
+
+  const handleReflection = async () => {
+    setLoadingReflection(true);
+    setReflection('');
+    const personaIds = mode === 'board'
+      ? boardPersonasRef.current.map(p => p.id)
+      : selectedPersonaRef.current ? [selectedPersonaRef.current.id] : [];
+    if (!personaIds.length) { setLoadingReflection(false); return; }
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: messagesRef.current, mode: 'reflection', personaIds }),
+      });
+      const data = await res.json();
+      setReflection(data.text || data.error || '');
+    } catch (err) {
+      setReflection(`Fehler: ${err.message}`);
+    } finally {
+      setLoadingReflection(false);
+    }
+  };
+
+  // ─── Board ───────────────────────────────────────────────────────────────────
+
+  const buildPersonaHistory = (allMsgs, personaId) =>
+    allMsgs.filter(m => m.role === 'user' || m.personaId === personaId)
+           .map(m => ({ role: m.role, content: m.content }));
+
+  const toggleBoardPersona = (p) => {
+    setBoardPersonas(prev => {
+      const exists = prev.find(x => x.id === p.id);
+      if (exists) return prev.filter(x => x.id !== p.id);
+      if (prev.length >= 6) return prev;
+      return [...prev, p];
+    });
+  };
+
+  const startBoardMeeting = () => {
+    if (boardPersonas.length < 2) return;
+    setBoardStarted(true); boardStartedRef.current = true;
+  };
+
+  const sendBoardMessage = async (text) => {
+    if (!text.trim() || loadingRef.current) return;
+    loadingRef.current = true; setLoading(true); stopListening();
+    const userMsg = { role: 'user', content: text };
+    const current = [...messagesRef.current, userMsg];
+    messagesRef.current = current; setMessages(current); setInput('');
+    try {
+      const personas = boardPersonasRef.current;
+      const responses = await Promise.all(personas.map(async (persona) => {
+        const history = buildPersonaHistory(current, persona.id);
+        const res = await fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: history, mode: 'persona', personaId: persona.id }),
+        });
+        const data = await res.json();
+        return { role: 'assistant', content: data.text || data.error || '–', personaId: persona.id, personaName: persona.name };
+      }));
+      const updated = [...current, ...responses];
+      messagesRef.current = updated; setMessages(updated);
+      if (voiceModeRef.current) speakSequence(responses, 0);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Fehler: ${err.message}` }]);
+      if (voiceModeRef.current) startListening();
+    } finally {
+      loadingRef.current = false; setLoading(false); inputRef.current?.focus();
+    }
+  };
+
+  // ─── Core send ───────────────────────────────────────────────────────────────
+
+  const sendMessageInternal = async (text) => {
+    if (modeRef.current === 'board' && boardStartedRef.current) return sendBoardMessage(text);
+    if (!text.trim() || loadingRef.current) return;
+
+    loadingRef.current = true; setLoading(true); stopListening();
+    const userMessage = { role: 'user', content: text };
+    const newMessages = [...messagesRef.current, userMessage];
+    messagesRef.current = newMessages; setMessages(newMessages); setInput('');
+
+    // Determine API mode + extra params
+    let apiMode = modeRef.current;
+    let extraParams = {};
+    const m = modeRef.current;
+
+    if (m === 'persona' && selectedPersonaRef.current) {
+      apiMode = 'persona';
+      extraParams = { personaId: selectedPersonaRef.current.id };
+    } else if (m === 'realstakeholder') {
+      apiMode = rsReadyRef.current ? 'realstakeholder_sim' : 'realstakeholder_guided';
+      if (rsReadyRef.current) extraParams = { customProfile: rsProfileRef.current, customName: rsNameRef.current };
+    } else if (m === 'sparring') {
+      apiMode = sparringReadyRef.current ? 'sparring_sim' : 'sparring_guided';
+      if (!sparringReadyRef.current) extraParams = { sparringProfile: sparringProfileRef.current || null };
+      else extraParams = { sparringProfile: sparringProfileRef.current };
+    }
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages, mode: apiMode, ...extraParams }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const pid = selectedPersonaRef.current?.id || null;
+      setMessages(prev => [...prev, { role: 'assistant', content: data.text, personaId: pid }]);
+
+      // Handle routing signals
+      if (data.route === 'persona_simulation' && data.personaId && !selectedPersonaRef.current) {
+        const persona = PERSONAS.find(p => p.id === data.personaId);
+        if (persona) { selectedPersonaRef.current = persona; setSelectedPersona(persona); }
+      }
+      if (data.route === 'auftragsklarung' && modeRef.current === 'routing') setMode('auftragsklarung');
+
+      // Realer Stakeholder ready
+      if (data.route === 'realstakeholder_ready' && data.profile) {
+        setRsProfile(data.profile); rsProfileRef.current = data.profile;
+        setRsName(data.name || 'Stakeholder'); rsNameRef.current = data.name || 'Stakeholder';
+        setRsReady(true); rsReadyRef.current = true;
+      }
+
+      // Sparring ready
+      if (data.route === 'sparring_ready' && data.profile) {
+        setSparringProfile(data.profile); sparringProfileRef.current = data.profile;
+        localStorage.setItem(LS_SPARRING, data.profile);
+        setSparringReady(true); sparringReadyRef.current = true;
+      }
+
+      speakText(data.text, pid, () => { if (voiceModeRef.current) startListening(); });
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Fehler: ${err.message}` }]);
+      if (voiceModeRef.current) startListening();
+    } finally {
+      loadingRef.current = false; setLoading(false); inputRef.current?.focus();
+    }
+  };
+
+  // ─── Reset ───────────────────────────────────────────────────────────────────
+
   const resetChat = () => {
-    stopListening();
-    window.speechSynthesis?.cancel();
-    setMessages([]);
-    messagesRef.current = [];
-    setSelectedPersona(null);
-    selectedPersonaRef.current = null;
-    setBoardPersonas([]);
-    boardPersonasRef.current = [];
-    setBoardStarted(false);
-    boardStartedRef.current = false;
+    stopListening(); window.speechSynthesis?.cancel();
+    setMessages([]); messagesRef.current = [];
+    setSelectedPersona(null); selectedPersonaRef.current = null;
+    setBoardPersonas([]); boardPersonasRef.current = [];
+    setBoardStarted(false); boardStartedRef.current = false;
+    setRsReady(false); rsReadyRef.current = false;
+    setRsProfile(''); rsProfileRef.current = '';
+    setRsName(''); rsNameRef.current = '';
+    setSparringReady(false); sparringReadyRef.current = false;
+    setReflection('');
     setListenState('idle');
   };
 
   const handleModeChange = (newMode) => {
-    setMode(newMode);
-    modeRef.current = newMode;
+    setMode(newMode); modeRef.current = newMode;
+    // For sparring: check if saved profile exists → pre-load
+    if (newMode === 'sparring') {
+      const saved = localStorage.getItem(LS_SPARRING);
+      if (saved) { setSparringProfile(saved); sparringProfileRef.current = saved; }
+    }
     resetChat();
   };
 
@@ -296,21 +338,41 @@ export default function Home() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessageInternal(input); }
   };
 
+  // ─── Derived state ────────────────────────────────────────────────────────────
+
   const hasChat = messages.length > 0 || loading;
   const showPersonaGrid = mode === 'persona' && !selectedPersona && messages.length === 0;
   const showBoardGrid = mode === 'board' && !boardStarted;
-  const showChat = selectedPersona || (mode !== 'persona' && mode !== 'board') || (mode === 'board' && boardStarted);
+
+  const showChat =
+    (mode !== 'persona' && mode !== 'board') ||
+    (mode === 'persona' && selectedPersona) ||
+    (mode === 'board' && boardStarted);
+
+  const canReflect =
+    messages.filter(m => m.role === 'assistant').length >= 2 &&
+    (selectedPersona || (mode === 'board' && boardStarted));
 
   const chatPlaceholder =
-    mode === 'board' ? `${boardPersonas.map(p => p.name.split('/')[0].trim()).join(', ')} warten. Starte das Gespräch.` :
+    mode === 'board' ? `${boardPersonas.map(p => p.name.split('/')[0].trim()).join(', ')} warten.` :
     mode === 'routing' ? 'Beschreibe deine Situation — ich finde den richtigen Ansatz.' :
     mode === 'auftragsklarung' ? 'Erzähl mir von deinem Projekt — wir klären gemeinsam den Auftrag.' :
-    selectedPersona ? `${selectedPersona.name.split('/')[0].trim()} wartet. Starte das Gespräch.` :
-    'Wähle eine Persona oben.';
+    mode === 'realstakeholder' ? (rsReady ? `${rsName} wartet. Starte das Gespräch.` : 'Ich führe dich durch die Vorbereitung. Starte das Gespräch.') :
+    mode === 'sparring' ? (sparringReady ? 'Dein Sparringspartner ist bereit.' : 'Ich konfiguriere deinen Sparringspartner.') :
+    selectedPersona ? `${selectedPersona.name.split('/')[0].trim()} wartet.` : '';
+
+  const inputPlaceholder =
+    !geminiKey ? 'API Key eingeben...' :
+    mode === 'board' && boardStarted ? 'Deine Frage an das Board…' :
+    mode === 'realstakeholder' && rsReady ? `Schreibe an ${rsName}…` :
+    mode === 'sparring' && sparringReady ? 'Deine These oder dein Thema…' :
+    selectedPersona ? `Schreibe an ${selectedPersona.name.split('/')[0].trim()}…` :
+    'Deine Nachricht… (Enter zum Senden)';
+
+  // ─── JSX ─────────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* HEADER */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -353,12 +415,11 @@ export default function Home() {
           <div className="max-w-2xl">
             <p className="text-xs font-semibold tracking-widest text-indigo-600 uppercase">Schritt 1 — Modus wählen</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Wofür möchtest du trainieren?</h1>
-            <p className="mt-2 text-slate-600 leading-relaxed text-sm">Wähle einen Modus, um dein Stakeholder-Gespräch realistisch zu üben.</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {MODULES.map((m) => (
               <ModuleCard key={m.id} id={m.id} number={m.number} title={m.title} description={m.description}
-                active={mode === m.id && !selectedPersona && !boardStarted}
+                active={mode === m.id && !selectedPersona && !boardStarted && !rsReady && !sparringReady}
                 onClick={() => handleModeChange(m.id)} />
             ))}
           </div>
@@ -382,21 +443,20 @@ export default function Home() {
           </section>
         )}
 
-        {/* Schritt 2 — Board Meeting Auswahl */}
+        {/* Schritt 2 — Board Auswahl */}
         {showBoardGrid && (
           <section className="space-y-5">
             <div className="flex items-end justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-widest text-indigo-600 uppercase">Schritt 2 — Teilnehmer wählen</p>
                 <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Board Meeting zusammenstellen</h2>
-                <p className="mt-1 text-sm text-slate-500">Wähle 2 bis 6 Stakeholder für das Meeting.</p>
+                <p className="mt-1 text-sm text-slate-500">Wähle 2 bis 6 Stakeholder.</p>
               </div>
-              <span className="text-sm font-medium text-slate-700">{boardPersonas.length} / 6 ausgewählt</span>
+              <span className="text-sm font-medium text-slate-700">{boardPersonas.length} / 6</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {PERSONAS.map(p => (
-                <PersonaCard key={p.id} persona={p} selected={boardPersonas.some(bp => bp.id === p.id)}
-                  onClick={() => toggleBoardPersona(p)} />
+                <PersonaCard key={p.id} persona={p} selected={boardPersonas.some(bp => bp.id === p.id)} onClick={() => toggleBoardPersona(p)} />
               ))}
             </div>
             <button onClick={startBoardMeeting} disabled={boardPersonas.length < 2}
@@ -407,42 +467,87 @@ export default function Home() {
           </section>
         )}
 
-        {/* Schritt 3 — Chat */}
+        {/* Sparring — saved profile notice */}
+        {mode === 'sparring' && !sparringReady && sparringProfile && messages.length === 0 && (
+          <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-indigo-900">Gespeichertes Profil gefunden</p>
+              <p className="text-xs text-indigo-600 mt-0.5 max-w-lg truncate">{sparringProfile}</p>
+            </div>
+            <button onClick={() => { setSparringProfile(''); sparringProfileRef.current = ''; localStorage.removeItem(LS_SPARRING); }}
+              className="text-xs text-indigo-500 hover:text-indigo-700 shrink-0 ml-4">Neu erstellen</button>
+          </div>
+        )}
+
+        {/* Chat section */}
         {showChat && (
           <section className="space-y-5">
             <div className="flex items-end justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-widest text-indigo-600 uppercase">
-                  {(showPersonaGrid || showBoardGrid) ? 'Schritt 3' : 'Schritt 2'}
+                  {showPersonaGrid || showBoardGrid ? 'Schritt 3' : 'Schritt 2'}
                 </p>
                 <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Gesprächsverlauf</h2>
               </div>
-              {(selectedPersona || (mode === 'board' && boardStarted)) && (
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500"/>
-                  {mode === 'board' ? `${boardPersonas.length} Teilnehmer · bereit` : `${selectedPersona.name.split('/')[0].trim()} · bereit`}
-                </div>
+              {/* Reflexion Button */}
+              {canReflect && (
+                <button onClick={handleReflection} disabled={loadingReflection}
+                  className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 transition">
+                  {loadingReflection ? (
+                    <><span className="h-3 w-3 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/>Analysiere…</>
+                  ) : (
+                    <><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Reflexion</>
+                  )}
+                </button>
               )}
             </div>
 
-            {/* Single Persona Banner */}
+            {/* Active Persona Banner */}
             {selectedPersona && mode === 'persona' && (
               <ActivePersonaBanner persona={selectedPersona} onClose={() => { setSelectedPersona(null); resetChat(); }} />
             )}
 
-            {/* Board Meeting Banner */}
+            {/* Realer Stakeholder Banner */}
+            {mode === 'realstakeholder' && rsReady && (
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-card">
+                <div className="h-8 w-8 rounded-lg bg-slate-700 grid place-items-center text-white text-xs font-bold shrink-0">
+                  {rsName.slice(0,2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-900">{rsName}</div>
+                  <div className="text-xs text-slate-500 truncate">{rsProfile.slice(0,80)}…</div>
+                </div>
+                <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 shrink-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"/>Online
+                </span>
+                <button onClick={resetChat} className="ml-2 text-xs text-slate-400 hover:text-slate-700 transition shrink-0">Beenden</button>
+              </div>
+            )}
+
+            {/* Sparring Banner */}
+            {mode === 'sparring' && sparringReady && (
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-card">
+                <div className="h-8 w-8 rounded-lg bg-violet-600 grid place-items-center text-white text-xs font-bold shrink-0">SP</div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-900">Sparringspartner</div>
+                  <div className="text-xs text-slate-500 truncate">{sparringProfile.slice(0,80)}…</div>
+                </div>
+                <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 shrink-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"/>Bereit
+                </span>
+                <button onClick={resetChat} className="ml-2 text-xs text-slate-400 hover:text-slate-700 transition shrink-0">Beenden</button>
+              </div>
+            )}
+
+            {/* Board Banner */}
             {mode === 'board' && boardStarted && (
               <div className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-card">
                 <div className="flex -space-x-2 shrink-0">
-                  {boardPersonas.slice(0, 5).map(p => (
-                    <div key={p.id} className="h-8 w-8 rounded-lg border-2 border-white bg-indigo-600 grid place-items-center text-white text-[10px] font-bold">
-                      {INITIALS[p.id]}
-                    </div>
+                  {boardPersonas.slice(0,5).map(p => (
+                    <div key={p.id} className="h-8 w-8 rounded-lg border-2 border-white bg-indigo-600 grid place-items-center text-white text-[10px] font-bold">{INITIALS[p.id]}</div>
                   ))}
                   {boardPersonas.length > 5 && (
-                    <div className="h-8 w-8 rounded-lg border-2 border-white bg-slate-200 grid place-items-center text-slate-600 text-[10px] font-semibold">
-                      +{boardPersonas.length - 5}
-                    </div>
+                    <div className="h-8 w-8 rounded-lg border-2 border-white bg-slate-200 grid place-items-center text-slate-600 text-[10px] font-semibold">+{boardPersonas.length - 5}</div>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -458,32 +563,26 @@ export default function Home() {
 
             {/* Chat Card */}
             <div className="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden">
-
-              {/* Voice Banner */}
               {voiceMode && (
                 <div className="px-6 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-xs font-medium text-indigo-700">
                     {listenState === 'listening' && <><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>Höre zu…</>}
-                    {listenState === 'speaking' && <><span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"/>Persona spricht…</>}
+                    {listenState === 'speaking' && <><span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"/>Spricht…</>}
                     {listenState === 'idle' && <><span className="h-2 w-2 rounded-full bg-slate-400"/>Bereit</>}
                   </span>
                   <button onClick={toggleVoiceMode} className="text-xs text-indigo-500 hover:text-indigo-700 transition">Beenden</button>
                 </div>
               )}
 
-              {/* Chat Body */}
               <div className="p-6 min-h-[240px] max-h-[480px] overflow-y-auto bg-gradient-to-b from-slate-50/40 to-white">
                 {!hasChat ? (
-                  <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">
-                    {chatPlaceholder}
-                  </div>
+                  <div className="flex items-center justify-center h-40 text-sm text-slate-400 text-center px-6">{chatPlaceholder}</div>
                 ) : (
                   <ChatView messages={messages} loading={loading} persona={selectedPersona}
                     boardPersonas={mode === 'board' ? boardPersonas : []} />
                 )}
               </div>
 
-              {/* Input Bar */}
               <div className="border-t border-slate-200 bg-white p-3 sm:p-4">
                 <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-100 transition p-2">
                   {voiceMode ? (
@@ -506,21 +605,14 @@ export default function Home() {
                     </div>
                   ) : (
                     <VoiceButton disabled={loading || !geminiKey} iconOnly
-                      onTranscript={(text) => { setInput(text); sendMessageInternal(text); }} />
+                      onTranscript={(t) => { setInput(t); sendMessageInternal(t); }} />
                   )}
                   <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown} disabled={loading || !geminiKey}
-                    placeholder={
-                      !geminiKey ? 'API Key eingeben...' :
-                      mode === 'board' && boardStarted ? 'Deine Frage an das Board…' :
-                      selectedPersona ? `Schreibe an ${selectedPersona.name.split('/')[0].trim()}…` :
-                      'Deine Nachricht… (Enter zum Senden)'
-                    }
-                    rows={1}
-                    className="flex-1 resize-none bg-transparent outline-none px-2 py-2 text-[15px] text-slate-900 placeholder:text-slate-400 leading-relaxed max-h-40 disabled:opacity-50"
-                  />
+                    placeholder={inputPlaceholder} rows={1}
+                    className="flex-1 resize-none bg-transparent outline-none px-2 py-2 text-[15px] text-slate-900 placeholder:text-slate-400 leading-relaxed max-h-40 disabled:opacity-50" />
                   {geminiKey && (
-                    <button onClick={toggleVoiceMode} title={voiceMode ? 'Sprachausgabe beenden' : 'Sprachausgabe aktivieren'}
+                    <button onClick={toggleVoiceMode} title={voiceMode ? 'Beenden' : 'Sprachausgabe'}
                       className={`h-10 w-10 shrink-0 grid place-items-center rounded-lg transition ${voiceMode ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50'}`}>
                       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M11 5L6 9H2v6h4l5 4V5z"/>
@@ -539,12 +631,26 @@ export default function Home() {
                 <div className="mt-2 flex items-center justify-between px-1">
                   <span className="text-xs text-slate-400">Enter zum Senden</span>
                   {geminiKey && (
-                    <button onClick={() => { setGeminiKey(''); localStorage.removeItem('KITEKO_GEMINI_KEY'); }}
+                    <button onClick={() => { setGeminiKey(''); localStorage.removeItem(LS_KEY); }}
                       className="text-xs text-slate-400 hover:text-slate-600 transition">Key zurücksetzen</button>
                   )}
                 </div>
               </div>
             </div>
+
+            {/* Reflexion Card (Feature 1) */}
+            {reflection && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 space-y-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  <span className="text-sm font-semibold text-emerald-800">Reflexion & Coaching-Feedback</span>
+                  <button onClick={() => setReflection('')} className="ml-auto text-xs text-emerald-600 hover:text-emerald-800">Schließen</button>
+                </div>
+                <div className="prose prose-sm prose-emerald max-w-none text-slate-800 leading-relaxed whitespace-pre-wrap text-sm">
+                  {reflection}
+                </div>
+              </div>
+            )}
           </section>
         )}
       </main>

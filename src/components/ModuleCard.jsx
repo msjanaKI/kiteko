@@ -70,6 +70,46 @@ const BoardSVG = ({ active }) => {
   );
 };
 
+const RealPersonSVG = ({ active }) => {
+  const c = active ? '#6366f1' : '#94a3b8';
+  const bg = active ? '#e0e7ff' : '#f1f5f9';
+  return (
+    <svg className="absolute top-1/2 -translate-y-1/2 right-4 w-28 h-28" viewBox="0 0 100 100" fill="none">
+      {/* Person silhouette */}
+      <circle cx="50" cy="32" r="14" fill={bg} stroke={c} strokeWidth="1"/>
+      <path d="M22 80 Q22 58 50 58 Q78 58 78 80" fill={bg} stroke={c} strokeWidth="1"/>
+      {/* Identification badge */}
+      <rect x="34" y="62" width="32" height="22" rx="3" fill="white" stroke={c} strokeWidth="0.75"/>
+      <line x1="40" y1="70" x2="60" y2="70" stroke={c} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="40" y1="76" x2="55" y2="76" stroke={c} strokeWidth="0.75" strokeLinecap="round"/>
+      {/* Checkmark */}
+      <circle cx="72" cy="36" r="9" fill={active ? '#6366f1' : '#334155'}/>
+      <path d="M67 36 L70.5 39.5 L77 33" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+};
+
+const SparringSVG = ({ active }) => {
+  const c = active ? '#6366f1' : '#94a3b8';
+  const bg = active ? '#e0e7ff' : '#f1f5f9';
+  return (
+    <svg className="absolute top-1/2 -translate-y-1/2 right-4 w-28 h-28" viewBox="0 0 100 100" fill="none">
+      {/* Left bubble */}
+      <rect x="8" y="18" width="44" height="26" rx="6" fill={bg} stroke={c} strokeWidth="0.75"/>
+      <path d="M18 44 L14 52 L26 44" fill={bg} stroke={c} strokeWidth="0.75" strokeLinejoin="round"/>
+      <line x1="16" y1="28" x2="44" y2="28" stroke={c} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="16" y1="35" x2="38" y2="35" stroke={c} strokeWidth="0.75" strokeLinecap="round"/>
+      {/* Right bubble (challenge) */}
+      <rect x="48" y="50" width="44" height="26" rx="6" fill={active ? '#6366f1' : '#334155'}/>
+      <path d="M82 76 L86 84 L74 76" fill={active ? '#6366f1' : '#334155'} stroke={active ? '#6366f1' : '#334155'} strokeWidth="0.75" strokeLinejoin="round"/>
+      <line x1="56" y1="60" x2="84" y2="60" stroke="white" strokeWidth="1" strokeLinecap="round"/>
+      <line x1="56" y1="67" x2="78" y2="67" stroke="white" strokeWidth="0.75" strokeLinecap="round"/>
+      {/* Bolt / challenge icon */}
+      <path d="M62 22 L56 36 L63 36 L57 50 L73 30 L65 30 L71 22Z" fill={active ? '#6366f1' : '#334155'} opacity="0.7"/>
+    </svg>
+  );
+};
+
 const ArrowIcon = () => (
   <svg className="w-4 h-4 transition group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <path d="M5 12h14M13 6l6 6-6 6"/>
@@ -100,6 +140,8 @@ export default function ModuleCard({ id, number, title, description, active, onC
         {id === 'auftragsklarung' && <TargetSVG active={active} />}
         {id === 'persona' && <PersonasSVG />}
         {id === 'board' && <BoardSVG active={active} />}
+        {id === 'realstakeholder' && <RealPersonSVG active={active} />}
+        {id === 'sparring' && <SparringSVG active={active} />}
         {active && (
           <div className="absolute top-3 right-3 text-xs font-semibold text-indigo-600 inline-flex items-center gap-1 bg-white/70 backdrop-blur px-2 py-1 rounded-md">
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-600"/>Aktiv
