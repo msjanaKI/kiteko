@@ -5,7 +5,6 @@ import ModuleCard from '@/components/ModuleCard';
 import ChatView from '@/components/ChatView';
 import PersonaCard, { ActivePersonaBanner } from '@/components/PersonaCard';
 import VoiceButton from '@/components/VoiceButton';
-import GeminiVoice from '@/components/GeminiVoice';
 
 const MODULES = [
   {
@@ -50,8 +49,8 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [geminiKey, setGeminiKey] = useState('');
-  const [showVoiceLive, setShowVoiceLive] = useState(false);
-  const [systemPromptForVoice, setSystemPromptForVoice] = useState('');
+  const [voiceMode, setVoiceMode] = useState(false);
+  const voiceModeRef = useRef(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -64,10 +63,26 @@ export default function Home() {
     localStorage.setItem('KITEKO_GEMINI_KEY', key);
   };
 
+  const speakText = (text) => {
+    if (!voiceModeRef.current || typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'de-DE';
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const toggleVoiceMode = () => {
+    const next = !voiceMode;
+    voiceModeRef.current = next;
+    setVoiceMode(next);
+    if (!next) window.speechSynthesis?.cancel();
+  };
+
   const resetChat = () => {
     setMessages([]);
     setSelectedPersona(null);
-    setShowVoiceLive(false);
+    window.speechSynthesis?.cancel();
   };
 
   const handleModeChange = (newMode) => {
@@ -96,6 +111,7 @@ export default function Home() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setMessages((prev) => [...prev, { role: 'assistant', content: data.text }]);
+      speakText(data.text);
       if (data.route === 'persona_simulation' && data.personaId && !selectedPersona) {
         const persona = PERSONAS.find((p) => p.id === data.personaId);
         if (persona) setSelectedPersona(persona);
@@ -111,17 +127,6 @@ export default function Home() {
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
-  };
-
-  const startLiveVoice = async () => {
-    const res = await fetch('/api/voice-prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: selectedPersona ? 'persona' : mode, personaId: selectedPersona?.id }),
-    });
-    const data = await res.json();
-    setSystemPromptForVoice(data.systemPrompt);
-    setShowVoiceLive(true);
   };
 
   const hasChat = messages.length > 0 || loading;
@@ -257,19 +262,14 @@ export default function Home() {
             {/* Chat Card */}
             <div className="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden">
 
-              {/* Live Voice Mode */}
-              {showVoiceLive && geminiKey && (
-                <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
-                  <GeminiVoice
-                    systemPrompt={systemPromptForVoice}
-                    apiKey={geminiKey}
-                    model="gemini-3.5-flash"
-                    onText={(text) => setMessages((prev) => [...prev, { role: 'assistant', content: text }])}
-                  />
-                  <button
-                    onClick={() => setShowVoiceLive(false)}
-                    className="text-xs text-indigo-500 hover:text-indigo-700 transition"
-                  >
+              {/* Voice Mode Banner */}
+              {voiceMode && (
+                <div className="px-6 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-xs font-medium text-indigo-700">
+                    <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"/>
+                    Sprachausgabe aktiv — Antworten werden vorgelesen
+                  </span>
+                  <button onClick={toggleVoiceMode} className="text-xs text-indigo-500 hover:text-indigo-700 transition">
                     Beenden
                   </button>
                 </div>
@@ -314,11 +314,11 @@ export default function Home() {
                     rows={1}
                     className="flex-1 resize-none bg-transparent outline-none px-2 py-2 text-[15px] text-slate-900 placeholder:text-slate-400 leading-relaxed max-h-40 disabled:opacity-50"
                   />
-                  {geminiKey && !showVoiceLive && (
+                  {geminiKey && (
                     <button
-                      onClick={startLiveVoice}
-                      title="Live Voice-Dialog"
-                      className="h-10 w-10 shrink-0 grid place-items-center rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                      onClick={toggleVoiceMode}
+                      title={voiceMode ? 'Sprachausgabe beenden' : 'Sprachausgabe aktivieren'}
+                      className={`h-10 w-10 shrink-0 grid place-items-center rounded-lg transition ${voiceMode ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50'}`}
                     >
                       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M11 5L6 9H2v6h4l5 4V5z"/>
