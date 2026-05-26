@@ -27,6 +27,22 @@ const MODULES = [
   },
 ];
 
+// pitch 0.5–2.0 (tiefer = autoritärer), rate 0.7–1.3 (langsamer = bedächtiger)
+const VOICE_PROFILE = {
+  '01': { pitch: 0.80, rate: 0.88 }, // CEO — tief, bedächtig
+  '02': { pitch: 0.85, rate: 0.83 }, // CFO — präzise, langsam
+  '03': { pitch: 1.15, rate: 1.02 }, // HR — warm, freundlich
+  '04': { pitch: 0.90, rate: 0.78 }, // Legal — vorsichtig, sehr langsam
+  '05': { pitch: 1.20, rate: 1.12 }, // PM — energetisch, schnell
+  '06': { pitch: 0.95, rate: 0.93 }, // IT — neutral, sachlich
+  '07': { pitch: 1.25, rate: 1.18 }, // Sales — enthusiastisch, flott
+  '08': { pitch: 0.88, rate: 0.85 }, // Controlling — präzise, gemessen
+  '09': { pitch: 0.82, rate: 0.90 }, // Investor — selbstsicher, ruhig
+  '10': { pitch: 0.78, rate: 0.85 }, // Advisory Board — gewichtig, langsam
+  '11': { pitch: 1.00, rate: 0.88 }, // Betriebsrat — vorsichtig, bedacht
+  '12': { pitch: 1.12, rate: 1.05 }, // Service — freundlich, hilfsbereit
+};
+
 const PERSONAS = [
   { id: '01', name: 'CEO / Geschäftsführer' },
   { id: '02', name: 'CFO / Finanzvorstand' },
@@ -112,7 +128,16 @@ export default function Home() {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'de-DE';
-    u.rate = 1.0;
+    const profile = VOICE_PROFILE[selectedPersonaRef.current?.id] || { pitch: 1.0, rate: 1.0 };
+    u.pitch = profile.pitch;
+    u.rate = profile.rate;
+
+    // Beste verfügbare deutsche Stimme wählen
+    const voices = window.speechSynthesis.getVoices();
+    const deVoice = voices.find((v) => v.lang.startsWith('de') && v.localService) ||
+                    voices.find((v) => v.lang.startsWith('de'));
+    if (deVoice) u.voice = deVoice;
+
     u.onend = () => { setListenState('idle'); onDone?.(); };
     u.onerror = () => { setListenState('idle'); onDone?.(); };
     setListenState('speaking');
