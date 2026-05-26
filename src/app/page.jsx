@@ -50,8 +50,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [geminiKey, setGeminiKey] = useState('');
   const [voiceMode, setVoiceMode] = useState(false);
+  const [listenState, setListenState] = useState('idle'); // idle | listening | speaking
   const voiceModeRef = useRef(false);
+  const loadingRef = useRef(false);
+  const messagesRef = useRef([]);
+  const modeRef = useRef('routing');
+  const selectedPersonaRef = useRef(null);
+  const recognitionRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { selectedPersonaRef.current = selectedPersona; }, [selectedPersona]);
 
   useEffect(() => {
     const stored = localStorage.getItem('KITEKO_GEMINI_KEY');
@@ -63,40 +73,63 @@ export default function Home() {
     localStorage.setItem('KITEKO_GEMINI_KEY', key);
   };
 
-  const speakText = (text) => {
-    if (!voiceModeRef.current || typeof window === 'undefined' || !window.speechSynthesis) return;
+  const stopListening = () => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setListenState((s) => s === 'listening' ? 'idle' : s);
+  };
+
+  const startListening = () => {
+    if (!voiceModeRef.current || loadingRef.current) return;
+    const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!SR) return;
+    const r = new SR();
+    r.lang = 'de-DE';
+    r.continuous = false;
+    r.interimResults = false;
+    r.onstart = () => setListenState('listening');
+    r.onresult = (e) => {
+      const transcript = e.results[0][0].transcript.trim();
+      if (transcript) sendMessageInternal(transcript);
+    };
+    r.onerror = () => setListenState('idle');
+    r.onend = () => {
+      recognitionRef.current = null;
+      // only restart if we ended without a result (no message was sent)
+      if (voiceModeRef.current && !loadingRef.current) {
+        setTimeout(() => { if (voiceModeRef.current && !loadingRef.current) startListening(); }, 300);
+      }
+    };
+    recognitionRef.current = r;
+    try { r.start(); } catch { recognitionRef.current = null; }
+  };
+
+  const speakText = (text, onDone) => {
+    if (!voiceModeRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
+      onDone?.();
+      return;
+    }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'de-DE';
-    utterance.rate = 1.0;
-    window.speechSynthesis.speak(utterance);
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'de-DE';
+    u.rate = 1.0;
+    u.onend = () => { setListenState('idle'); onDone?.(); };
+    u.onerror = () => { setListenState('idle'); onDone?.(); };
+    setListenState('speaking');
+    window.speechSynthesis.speak(u);
   };
 
-  const toggleVoiceMode = () => {
-    const next = !voiceMode;
-    voiceModeRef.current = next;
-    setVoiceMode(next);
-    if (!next) window.speechSynthesis?.cancel();
-  };
-
-  const resetChat = () => {
-    setMessages([]);
-    setSelectedPersona(null);
-    window.speechSynthesis?.cancel();
-  };
-
-  const handleModeChange = (newMode) => {
-    setMode(newMode);
-    resetChat();
-  };
-
-  const sendMessage = async (text) => {
-    if (!text.trim() || loading) return;
+  // Core send — uses refs so safe to call from STT callbacks
+  const sendMessageInternal = async (text) => {
+    if (!text.trim() || loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    stopListening();
     const userMessage = { role: 'user', content: text };
-    const newMessages = [...messages, userMessage];
+    const newMessages = [...messagesRef.current, userMessage];
+    messagesRef.current = newMessages;
     setMessages(newMessages);
     setInput('');
-    setLoading(true);
 
     try {
       const res = await fetch('/api/chat', {
@@ -104,29 +137,62 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages,
-          mode: selectedPersona ? 'persona' : mode,
-          personaId: selectedPersona?.id || null,
+          mode: selectedPersonaRef.current ? 'persona' : modeRef.current,
+          personaId: selectedPersonaRef.current?.id || null,
         }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setMessages((prev) => [...prev, { role: 'assistant', content: data.text }]);
-      speakText(data.text);
-      if (data.route === 'persona_simulation' && data.personaId && !selectedPersona) {
+      if (data.route === 'persona_simulation' && data.personaId && !selectedPersonaRef.current) {
         const persona = PERSONAS.find((p) => p.id === data.personaId);
-        if (persona) setSelectedPersona(persona);
+        if (persona) { selectedPersonaRef.current = persona; setSelectedPersona(persona); }
       }
-      if (data.route === 'auftragsklarung' && mode === 'routing') setMode('auftragsklarung');
+      if (data.route === 'auftragsklarung' && modeRef.current === 'routing') setMode('auftragsklarung');
+      speakText(data.text, () => { if (voiceModeRef.current) startListening(); });
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'assistant', content: `Fehler: ${err.message}` }]);
+      if (voiceModeRef.current) startListening();
     } finally {
+      loadingRef.current = false;
       setLoading(false);
       inputRef.current?.focus();
     }
   };
 
+  const sendMessage = (text) => sendMessageInternal(text ?? input);
+
+  const toggleVoiceMode = () => {
+    const next = !voiceMode;
+    voiceModeRef.current = next;
+    setVoiceMode(next);
+    if (next) {
+      startListening();
+    } else {
+      stopListening();
+      window.speechSynthesis?.cancel();
+      setListenState('idle');
+    }
+  };
+
+  const resetChat = () => {
+    stopListening();
+    window.speechSynthesis?.cancel();
+    setMessages([]);
+    messagesRef.current = [];
+    setSelectedPersona(null);
+    selectedPersonaRef.current = null;
+    setListenState('idle');
+  };
+
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    modeRef.current = newMode;
+    resetChat();
+  };
+
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessageInternal(input); }
   };
 
   const hasChat = messages.length > 0 || loading;
@@ -266,8 +332,9 @@ export default function Home() {
               {voiceMode && (
                 <div className="px-6 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-xs font-medium text-indigo-700">
-                    <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"/>
-                    Sprachausgabe aktiv — Antworten werden vorgelesen
+                    {listenState === 'listening' && <><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>Höre zu…</>}
+                    {listenState === 'speaking' && <><span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"/>Persona spricht…</>}
+                    {listenState === 'idle' && <><span className="h-2 w-2 rounded-full bg-slate-400"/>Bereit</>}
                   </span>
                   <button onClick={toggleVoiceMode} className="text-xs text-indigo-500 hover:text-indigo-700 transition">
                     Beenden
@@ -295,11 +362,31 @@ export default function Home() {
               {/* Input Bar */}
               <div className="border-t border-slate-200 bg-white p-3 sm:p-4">
                 <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-100 transition p-2">
-                  <VoiceButton
-                    disabled={loading || !geminiKey}
-                    iconOnly
-                    onTranscript={(text) => { setInput(text); sendMessage(text); }}
-                  />
+                  {voiceMode ? (
+                    <div className="h-10 w-10 shrink-0 grid place-items-center rounded-lg">
+                      {listenState === 'listening' && (
+                        <span className="flex gap-0.5 items-end h-5">
+                          {[0,80,160,240,160].map((d,i) => (
+                            <span key={i} className="w-1 rounded-full bg-emerald-500 animate-bounce" style={{height:`${8+i%3*4}px`,animationDelay:`${d}ms`}}/>
+                          ))}
+                        </span>
+                      )}
+                      {listenState === 'speaking' && (
+                        <span className="flex gap-0.5 items-end h-5">
+                          {[0,120,240,120,0].map((d,i) => (
+                            <span key={i} className="w-1 rounded-full bg-indigo-500 animate-bounce" style={{height:`${6+i%3*5}px`,animationDelay:`${d}ms`}}/>
+                          ))}
+                        </span>
+                      )}
+                      {listenState === 'idle' && <span className="h-2 w-2 rounded-full bg-slate-300"/>}
+                    </div>
+                  ) : (
+                    <VoiceButton
+                      disabled={loading || !geminiKey}
+                      iconOnly
+                      onTranscript={(text) => { setInput(text); sendMessageInternal(text); }}
+                    />
+                  )}
                   <textarea
                     ref={inputRef}
                     value={input}
@@ -327,7 +414,7 @@ export default function Home() {
                     </button>
                   )}
                   <button
-                    onClick={() => sendMessage(input)}
+                    onClick={() => sendMessageInternal(input)}
                     disabled={loading || !input.trim() || !geminiKey}
                     className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg bg-indigo-600 text-white text-sm font-semibold shadow-sm hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-slate-200 disabled:text-slate-400 transition shrink-0"
                   >
