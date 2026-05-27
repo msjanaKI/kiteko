@@ -16,13 +16,74 @@ const MODULES = [
 ];
 
 const VOICE_PROFILE = {
-  '01': { pitch: 0.80, rate: 0.88 }, '02': { pitch: 0.85, rate: 0.83 },
-  '03': { pitch: 1.15, rate: 1.02 }, '04': { pitch: 0.90, rate: 0.78 },
-  '05': { pitch: 1.20, rate: 1.12 }, '06': { pitch: 0.95, rate: 0.93 },
-  '07': { pitch: 1.25, rate: 1.18 }, '08': { pitch: 0.88, rate: 0.85 },
-  '09': { pitch: 0.82, rate: 0.90 }, '10': { pitch: 0.78, rate: 0.85 },
-  '11': { pitch: 1.00, rate: 0.88 }, '12': { pitch: 1.12, rate: 1.05 },
+  // CEO tief, ruhit, autoritativ
+  '01': { pitch: 0.80, rate: 0.88, voiceHint: ['Google Deutsch', 'Microsoft Katja', 'Microsoft Hedda', 'Anna', 'Alex'] },
+  // CFO analytisch, präzise, etwas höher
+  '02': { pitch: 0.85, rate: 0.83, voiceHint: ['Google Deutsch', 'Microsoft Katja', 'Samantha', 'Anna'] },
+  // HR empathisch, warm, mittelhoch
+  '03': { pitch: 1.15, rate: 1.02, voiceHint: ['Samantha', 'Anna', 'Google Deutsch', 'Microsoft Katja'] },
+  // Legal vorsichtig, bedacht, niedrig
+  '04': { pitch: 0.90, rate: 0.78, voiceHint: ['Microsoft Hedda', 'Anna', 'Google Deutsch', 'Alex'] },
+  // Produktmanagement enthusiastisch, schnell
+  '05': { pitch: 1.20, rate: 1.12, voiceHint: ['Samantha', 'Google Deutsch', 'Anna', 'Microsoft Katja'] },
+  // IT technisch, neutral
+  '06': { pitch: 0.95, rate: 0.93, voiceHint: ['Google Deutsch', 'Microsoft Katja', 'Alex', 'Anna'] },
+  // Vertrieb energisch, schnell, hoch
+  '07': { pitch: 1.25, rate: 1.18, voiceHint: ['Samantha', 'Anna', 'Google Deutsch', 'Microsoft Katja'] },
+  // Controlling detailorientiert, langsam, niedrig
+  '08': { pitch: 0.88, rate: 0.85, voiceHint: ['Microsoft Hedda', 'Google Deutsch', 'Anna', 'Alex'] },
+  // Investor ernst, tief, bedacht
+  '09': { pitch: 0.82, rate: 0.90, voiceHint: ['Microsoft Hedda', 'Google Deutsch', 'Alex', 'Anna'] },
+  // Advisory Board weise, tief, langsam
+  '10': { pitch: 0.78, rate: 0.85, voiceHint: ['Microsoft Hedda', 'Alex', 'Google Deutsch', 'Anna'] },
+  // Betriebsrat direkt, mittel
+  '11': { pitch: 1.00, rate: 0.88, voiceHint: ['Google Deutsch', 'Microsoft Katja', 'Samantha', 'Anna'] },
+  // Service freundlich, warm
+  '12': { pitch: 1.12, rate: 1.05, voiceHint: ['Samantha', 'Anna', 'Google Deutsch', 'Microsoft Katja'] },
 };
+
+// --- Voice Selection Helper ---
+let cachedVoices = [];
+let voicesLoaded = false;
+
+// Stimmen asynchron laden – sie sind erst nach DOMContentLoad verfügbar
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  const loadVoices = () => {
+    cachedVoices = window.speechSynthesis.getVoices();
+    if (cachedVoices.length > 0) voicesLoaded = true;
+  };
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+/**
+ * Finde die beste verfügbare deutsche Stimme basierend auf einer Priorisierungsliste.
+ * Nutzt Caching und Fallback-Logik.
+ * @param {string[]} hints - Priorisierte Liste von Stimmnamen-Substrings
+ * @returns {SpeechSynthesisVoice|null}
+ */
+function selectVoice(hints) {
+  if (!cachedVoices.length) {
+    cachedVoices = typeof window !== 'undefined' && window.speechSynthesis
+      ? window.speechSynthesis.getVoices() : [];
+  }
+  if (!cachedVoices.length) return null;
+
+  const german = cachedVoices.filter(v => v.lang.startsWith('de'));
+
+  // 1. Versuche jede Hint-Sprache in Prioritätsreihenfolge
+  for (const hint of hints) {
+    const match = german.find(v => v.name.includes(hint));
+    if (match) return match;
+  }
+
+  // 2. Bevorzuge Nicht-localService (Cloud/hochwertig) statt OS-Standard
+  const cloud = german.find(v => !v.localService);
+  if (cloud) return cloud;
+
+  // 3. Fallback: Erste deutsche Stimme
+  return german[0] || null;
+}
 
 export const INITIALS = {
   '01': 'CEO', '02': 'CFO', '03': 'HR', '04': 'LG',
@@ -142,11 +203,13 @@ export default function Home() {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'de-DE';
-    const p = VOICE_PROFILE[personaId] || { pitch: 1.0, rate: 1.0 };
+    const p = VOICE_PROFILE[personaId] || { pitch: 1.0, rate: 1.0, voiceHint: [] };
     u.pitch = p.pitch; u.rate = p.rate;
-    const voices = window.speechSynthesis.getVoices();
-    const dv = voices.find(v => v.lang.startsWith('de') && v.localService) || voices.find(v => v.lang.startsWith('de'));
-    if (dv) u.voice = dv;
+
+    // Wähle die beste verfügbare Stimme für diese Persona
+    const voice = selectVoice(p.voiceHint || []);
+    if (voice) u.voice = voice;
+
     u.onend = () => { setListenState('idle'); onDone?.(); };
     u.onerror = () => { setListenState('idle'); onDone?.(); };
     setListenState('speaking');
